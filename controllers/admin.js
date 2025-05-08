@@ -5,6 +5,31 @@ import { rm } from "fs";
 import { promisify } from "util";
 import fs from "fs";
 import { User } from "../models/User.js";
+import path from "path";
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const unlinkAsync = promisify(fs.unlink);
+const existsAsync = promisify(fs.exists);
+
+// Helper function to safely delete file
+const safeDeleteFile = async (filePath) => {
+  try {
+    const exists = await existsAsync(filePath);
+    if (exists) {
+      await unlinkAsync(filePath);
+      console.log("File deleted:", filePath);
+    } else {
+      console.log("File does not exist:", filePath);
+    }
+  } catch (error) {
+    console.log("Error handling file:", filePath, error.message);
+  }
+};
 
 export const createCourse = TryCatch(async (req, res) => {
   const { title, description, createdBy, duration, price, category } = req.body;
@@ -51,21 +76,13 @@ export const addLectures = TryCatch(async (req, res) => {
   });
 });
 
-const unlinkAsync = promisify(fs.unlink);
-
 export const deleteLecture = TryCatch(async (req, res) => {
   const lecture = await Lecture.findById(req.params.id);
   if (!lecture) {
     return res.status(404).json({ message: "Lecture not found" });
   }
 
-  try {
-    await unlinkAsync(lecture.video);
-    console.log("Video deleted:", lecture.video);
-  } catch (error) {
-    console.log("Error deleting video:", error.message);
-  }
-
+  await safeDeleteFile(lecture.video);
   await lecture.deleteOne();
 
   res.json({ message: "Lecture Deleted Successfully" });
@@ -82,22 +99,12 @@ export const deleteCourse = TryCatch(async (req, res) => {
   // Delete lecture videos
   await Promise.all(
     lectures.map(async (lecture) => {
-      try {
-        await unlinkAsync(lecture.video);
-        console.log("Video deleted:", lecture.video);
-      } catch (error) {
-        console.log("Error deleting video:", error.message);
-      }
+      await safeDeleteFile(lecture.video);
     })
   );
 
   // Delete course image
-  try {
-    await unlinkAsync(course.image);
-    console.log("Image deleted:", course.image);
-  } catch (error) {
-    console.log("Error deleting image:", error.message);
-  }
+  await safeDeleteFile(course.image);
 
   // Delete lectures from database
   await Lecture.deleteMany({ course: req.params.id });
